@@ -1,4 +1,3 @@
-
 import os
 
 from dotenv import load_dotenv
@@ -34,8 +33,9 @@ def search_company(company_name: str) -> dict:
 
     return response
 
+
 def summarize_company_research(search_results: dict) -> str:
-    """Summarize Tavily results into a company research profile."""
+    """Summarize Tavily results into a concise company research profile."""
 
     results = search_results.get("results", [])
 
@@ -47,31 +47,27 @@ def summarize_company_research(search_results: dict) -> str:
     for result in results:
         research_text += (
             f"\nTitle: {result.get('title', '')}\n"
-            f"URL: {result.get('url', '')}\n"
             f"Content: {result.get('content', '')}\n"
         )
 
+    # Keep snippet under 2000 chars so prompt processing is fast
+    snippet = research_text[:2000].strip()
+
     prompt = f"""
-    You are a company research assistant for PrepSense,
-    an interview preparation system.
+    You are a company research assistant for PrepSense, an interview preparation workspace.
 
-    Summarize the supplied web search results into these sections:
-    1. Company overview
-    2. Main products and services
-    3. Important technology areas
-    4. Potential interview preparation topics
+    Summarize the company research in under 150 words using exactly these 3 concise sections:
+    1. Overview & Core Mission (1-2 sentences)
+    2. Main Products & Technologies
+    3. Suggested Interview Topics (2-3 bullet points)
 
-    Use only information supported by the supplied results.
-    Label potential interview topics as suggestions, not facts.
-    Do not invent company information.
-    Keep the summary concise and include relevant source URLs.
+    Be direct, brief, and factual. Do not write essays or introductory filler.
 
-    Research results:
-    {research_text}
+    Research:
+    {snippet}
     """
 
     return ask_ai(prompt)
-
 
 
 if __name__ == "__main__":
