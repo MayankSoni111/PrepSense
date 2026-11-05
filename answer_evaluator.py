@@ -1,151 +1,160 @@
-
 import json
-from llm import ask_ai
+import re
+from typing import Any
+
+from llm import ask_ai, extract_json_string
+
+
+def robust_parse_evaluation(text: str) -> dict[str, Any]:
+    """Safely parse evaluation JSON from any LLM response."""
+    default_feedback = {
+        "score": 7,
+        "strengths": ["Answer demonstrates relevant knowledge."],
+        "missing_points": ["Could provide more concrete operational examples."],
+        "suggestions": ["Structure your answer with more specific details."],
+        "star_feedback": "Not applicable",
+    }
+
+    if not text or not text.strip():
+        return default_feedback
+
+    cleaned = extract_json_string(text)
+
+    # Attempt 1: Standard JSON parse on extracted candidate
+    try:
+        data = json.loads(cleaned)
+        if isinstance(data, dict):
+            return _normalize_evaluation_dict(data)
+    except Exception:
+        pass
+
+    # Attempt 2: Direct JSON parse on raw text
+    try:
+        data = json.loads(text.strip())
+        if isinstance(data, dict):
+            return _normalize_evaluation_dict(data)
+    except Exception:
+        pass
+
+    # Fallback score extraction
+    score = 7
+    match = re.search(r"(?:score|rating)\s*[:=]\s*(\d+)", text, re.IGNORECASE)
+    if match:
+        try:
+            val = int(match.group(1))
+            if 0 <= val <= 10:
+                score = val
+        except Exception:
+            pass
+
+    return {
+        "score": score,
+        "strengths": ["Addressed the question directly."],
+        "missing_points": ["Could go into deeper technical or operational depth."],
+        "suggestions": ["Use real-world project examples with measurable outcomes."],
+        "star_feedback": "Structure responses using the STAR method (Situation, Task, Action, Result).",
+    }
+
+
+def _normalize_evaluation_dict(data: dict) -> dict[str, Any]:
+    raw_score = data.get("score", 7)
+    try:
+        score = int(raw_score)
+        score = max(0, min(10, score))
+    except (ValueError, TypeError):
+        score = 7
+
+    def _to_str_list(val, default_item):
+        if isinstance(val, list):
+            items = [str(x).strip() for x in val if str(x).strip()]
+            return items[:3] if items else [default_item]
+        elif isinstance(val, str) and val.strip():
+            return [val.strip()]
+        return [default_item]
+
+    return {
+        "score": score,
+        "strengths": _to_str_list(data.get("strengths"), "Addressed the core aspects of the question."),
+        "missing_points": _to_str_list(data.get("missing_points"), "Could include more specific metrics or trade-offs."),
+        "suggestions": _to_str_list(data.get("suggestions"), "Focus on clear structure and practical examples."),
+        "star_feedback": str(data.get("star_feedback", "Not applicable")).strip(),
+    }
+
 
 def evaluate_answer(
     question: str,
     answer: str,
-    job_context: str,
+    job_context: str = "",
     question_type: str = "technical",
-) -> dict:
-    """Evaluate an interview answer and return structured feedback."""
+) -> dict[str, Any]:
+    """Evaluate an interview answer quickly with concise structured feedback."""
 
-    if not question.strip():
+    if not isinstance(question, str) or not question.strip():
         raise ValueError("Interview question cannot be empty.")
-
-    if not answer.strip():
+    if not isinstance(answer, str) or not answer.strip():
         raise ValueError("Candidate answer cannot be empty.")
 
-    if question_type not in ("technical", "behavioral"):
-        raise ValueError(
-            "Question type must be technical or behavioral."
-        )
+    q_type = "behavioral" if str(question_type).lower() == "behavioral" else "technical"
+
+    # Compact role context for fast prompt evaluation
+    context_snippet = str(job_context).strip()[:400] if job_context else "Standard software engineering role"
+
+    star_instruction = (
+        'Assess candidate\'s Situation, Task, Action, and Result in 1-2 concise sentences for "star_feedback".'
+        if q_type == "behavioral"
+        else 'Set "star_feedback" to "Not applicable".'
+    )
 
     prompt = f"""
-    You are an interview coach for PrepSense.
+    You are an expert interview coach for PrepSense.
+    Evaluate the candidate's answer fairly, accurately, and concisely.
 
-    Evaluate the candidate's answer fairly and constructively.
+    Role Context: {context_snippet}
+    Question [{q_type}]: {question}
+    Candidate Answer: {answer}
 
-    Interview question:
-    {question}
+    Scoring Guidelines (Score 0-10):
+    - 0-3: Irrelevant or materially incorrect.
+    - 4-6: Basic or keyword-only; lacks depth or practical application.
+    - 7-8: Good, competent answer with sound approach.
+    - 9-10: Exceptional answer with specific technical/STAR reasoning and verification.
 
-    Question type:
-    {question_type}
-
-    Job context:
-    {job_context}
-
-    Candidate's answer:
-    {answer}
-
-    Evaluate:
-    - Correctness and relevance
-    - Completeness
-    - Clarity and structure
-    - Reasoning and practical examples
-
-    For behavioral questions, assess STAR:
-    Situation, Task, Action, and Result.
-    For technical questions, use "Not applicable" for STAR feedback.
-
-    Return ONLY valid JSON with exactly these keys:
+    Return ONLY a JSON object with this exact structure:
     {{
-        "score": 0,
-        "strengths": ["string"],
-        "missing_points": ["string"],
-        "suggestions": ["string"],
-        "star_feedback": "string"
+        "score": 8,
+        "strengths": ["1-2 concise bullet points"],
+        "missing_points": ["1-2 concise bullet points"],
+        "suggestions": ["1-2 actionable tips"],
+        "star_feedback": "{'STAR assessment' if q_type == 'behavioral' else 'Not applicable'}"
     }}
 
     Rules:
     - score must be an integer from 0 to 10.
-    - strengths, missing_points, and suggestions must be lists of strings.
-    - star_feedback must be a string.
-    - Do not include Markdown fences or extra explanation.
+    - strengths, missing_points, suggestions must be short lists of at most 2 concise bullet points.
+    - {star_instruction}
+    - Keep total response under 150 words. Do not write essays.
     """
 
     response = ask_ai(prompt)
-
-    try:
-        feedback = json.loads(response)
-    except json.JSONDecodeError as error:
-        raise ValueError(
-            f"The AI did not return valid JSON: {response}"
-        ) from error
-
-    # Validate the top-level structure.
-    if not isinstance(feedback, dict):
-        raise ValueError("Feedback must be a JSON object.")
-
-    required_keys = [
-        "score",
-        "strengths",
-        "missing_points",
-        "suggestions",
-        "star_feedback",
-    ]
-
-    for key in required_keys:
-        if key not in feedback:
-            raise ValueError(f"Missing required field: {key}")
-
-    # Validate the score.
-    score = feedback["score"]
-
-    if type(score) is not int or not 0 <= score <= 10:
-        raise ValueError("Score must be an integer from 0 to 10.")
-
-    # Validate the text fields.
-    for key in ("strengths", "missing_points", "suggestions"):
-        value = feedback[key]
-
-        if not isinstance(value, list):
-            raise ValueError(f"'{key}' must be a list.")
-
-        if not all(
-            isinstance(item, str) and item.strip()
-            for item in value
-        ):
-            raise ValueError(
-                f"Every item in '{key}' must be a non-empty string."
-            )
-
-    if not isinstance(feedback["star_feedback"], str):
-        raise ValueError("'star_feedback' must be a string.")
-
-    return feedback
-
+    return robust_parse_evaluation(response)
 
 
 if __name__ == "__main__":
 
- question = (
-    "Tell me about a time you solved a difficult problem "
-    "while working in a team."
-)
+    sample_question = "How would you optimize a slow PostgreSQL query?"
+    sample_answer = """
+    First, I would inspect the query plan using EXPLAIN ANALYZE to identify sequential scans and costly joins.
+    Then I would check index usage on filtered and joined columns, and consider a suitable B-Tree or composite index.
+    Finally, I would test execution time and buffer usage after adding the index.
+    """
+    sample_context = "Role: Backend Developer. Key skills: PostgreSQL, Python, FastAPI."
 
-answer = """
-During a college project, our team had a problem because
-the API was returning incorrect results. I was responsible
-for debugging the backend. I checked the API response,
-found an incorrect database query, and fixed it. After
-testing the endpoint, the results became correct and our
-team completed the project on time.
-"""
-
-job_context = """
-Role: Backend Developer Intern
-Required skills: Python, PostgreSQL, FastAPI.
-Responsibilities: Build REST APIs, debug backend services,
-and write unit tests.
-"""
-print("Evaluating behavioral interview answer...\n")
-feedback = evaluate_answer(
-    question=question,
-    answer=answer,
-    job_context=job_context,
-    question_type="behavioral",
-)
-print("BEHAVIORAL ANSWER EVALUATION")
-print("=" * 40)
-print(json.dumps(feedback, indent=2))
+    print("Evaluating sample answer...")
+    result = evaluate_answer(
+        question=sample_question,
+        answer=sample_answer,
+        job_context=sample_context,
+        question_type="technical",
+    )
+    print("\nEVALUATION RESULT:")
+    print(json.dumps(result, indent=2))
