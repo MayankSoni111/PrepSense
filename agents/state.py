@@ -3,20 +3,51 @@ from typing import TypedDict, List, Dict, Any, Optional
 
 class InterviewState(TypedDict, total=False):
     """
-    Central State object passed between nodes in the LangGraph workflow.
-    Every node reads needed inputs from this state and returns updated fields.
+    Shared state passed between nodes in the PrepSense
+    LangGraph workflow.
+
+    Every node reads the information it needs and returns
+    only the fields it updates.
     """
-    # Inputs provided by user
+
+    # ==============================================
+    # 1. USER INPUTS
+    # ==============================================
+
     company_name: str
     job_description: str
     resume_pdf: Any
 
-    # Generated artifacts
+    # ==============================================
+    # 2. RESUME AND COMPANY RESEARCH
+    # ==============================================
+
     resume_text: str
     company_research: str
-    job_info: Dict[str, Any]
-    questions: List[Dict[str, Any]]
 
-    # Execution tracking & error reporting
+    # ==============================================
+    # 3. JOB DESCRIPTION PROCESSING
+    # ==============================================
+
+    job_info: Dict[str, Any]
+
+    # ==============================================
+    # 4. QUESTION GENERATION
+    # ==============================================
+    questions: List[Dict[str, Any]]
+    questions_validated: bool
+
+    # ==============================================
+    # 5. ANSWER EVALUATION
+    # ==============================================
+
+    selected_question: Dict[str, Any]
+    candidate_answer: str
+    feedback: Dict[str, Any]
+
+    # ==============================================
+    # 6. EXECUTION TRACKING
+    # ==============================================
+
     current_step: str
     error: Optional[str]

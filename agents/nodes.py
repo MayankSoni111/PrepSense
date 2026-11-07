@@ -3,7 +3,10 @@ from agents.state import InterviewState
 from resume_parser import extract_resume_text
 from tools.company_research import search_company, summarize_company_research
 from job_parser import parse_job_description
-from question_generator import generate_questions
+from question_generator import (
+    generate_questions,
+    validate_question_set,
+)
 
 
 def extract_resume_node(state: InterviewState) -> dict:
@@ -90,4 +93,29 @@ def generate_questions_node(state: InterviewState) -> dict:
     return {
         "questions": questions,
         "current_step": "questions_generated",
+    }
+
+def validate_questions_node(state: InterviewState) -> dict:
+    """
+    Node 5: Validate the generated interview questions.
+
+    The interview is marked ready only when the question
+    set contains exactly 5 technical and 3 behavioral questions.
+    """
+
+    print("\n[LangGraph Node] Validating generated questions...")
+
+    # Step 1: Read generated questions from shared state
+    questions = state.get("questions", [])
+
+    # Step 2: Validate the questions
+    validated_questions = validate_question_set(questions)
+
+    # Step 3: Update shared state after successful validation
+    print("[LangGraph Node] Question validation successful.")
+
+    return {
+        "questions": validated_questions,
+        "questions_validated": True,
+        "current_step": "interview_ready",
     }

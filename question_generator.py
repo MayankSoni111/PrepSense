@@ -135,6 +135,116 @@ def robust_parse_questions(text: str) -> list:
 
     return valid
 
+def validate_question_set(questions: list) -> list:
+    """
+    Validate that the generated interview contains exactly
+    5 technical and 3 behavioral questions.
+    """
+
+    if not isinstance(questions, list):
+        raise ValueError("Questions must be provided as a list.")
+
+    if len(questions) != 8:
+        raise ValueError(
+            f"Expected exactly 8 questions, but received {len(questions)}."
+        )
+
+    seen_questions = set()
+    technical_count = 0
+    behavioral_count = 0
+
+    for index, question in enumerate(questions, start=1):
+
+        if not isinstance(question, dict):
+            raise ValueError(
+                f"Question {index} must be a dictionary."
+            )
+
+        question_text = question.get("question", "")
+
+        if not isinstance(question_text, str) or not question_text.strip():
+            raise ValueError(
+                f"Question {index} has empty question text."
+            )
+
+        question_type = question.get("type")
+
+        if question_type not in ("technical", "behavioral"):
+            raise ValueError(
+                f"Question {index} has an invalid type: {question_type}"
+            )
+
+        reason = question.get("reason")
+
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError(
+                f"Question {index} has no valid relevance reason."
+            )
+
+        # Normalize text to identify exact duplicates
+        normalized = re.sub(
+            r"\s+",
+            " ",
+            question_text.lower().strip()
+        )
+
+        if normalized in seen_questions:
+            raise ValueError(
+                f"Duplicate question detected at position {index}."
+            )
+
+        seen_questions.add(normalized)
+
+        if question_type == "technical":
+            technical_count += 1
+        else:
+            behavioral_count += 1
+
+    if technical_count != 5:
+        raise ValueError(
+            f"Expected 5 technical questions, "
+            f"but received {technical_count}."
+        )
+
+    if behavioral_count != 3:
+        raise ValueError(
+            f"Expected 3 behavioral questions, "
+            f"but received {behavioral_count}."
+        )
+
+    print(
+        "\n[Validation] Question set passed: "
+        "5 technical + 3 behavioral = 8 questions."
+    )
+
+    return questions
+
+
+def deduplicate_questions(questions: list) -> list:
+    """Remove exact duplicate questions while preserving order."""
+
+    unique_questions = []
+    seen = set()
+
+    for question in questions:
+        text = re.sub(
+            r"\s+",
+            " ",
+            question["question"].strip().lower()
+        )
+
+        if text not in seen:
+            seen.add(text)
+            unique_questions.append(question)
+
+    removed = len(questions) - len(unique_questions)
+
+    if removed:
+        print(f"[Validation] Removed {removed} duplicate question(s).")
+
+    return unique_questions
+
+
 
 def generate_questions(
     job_info: dict,
@@ -142,39 +252,86 @@ def generate_questions(
     resume_text: str = "",
 ) -> list:
     """
-    Generate and validate interview questions using
-    job information, company research, and resume context.
+    Generate exactly 5 technical and 3 behavioral
+    interview questions, with targeted repair if necessary.
     """
+
+    if not isinstance(job_info, dict):
+        raise ValueError("Job information must be a dictionary.")
+
+    if not isinstance(company_research, str):
+        raise ValueError("Company research must be a string.")
 
     if not isinstance(resume_text, str):
         raise ValueError("Resume text must be a string.")
+
+    # ----------------------------------------------
+    # 1. Prepare candidate context
+    # ----------------------------------------------
 
     if resume_text.strip():
         candidate_context = resume_text.strip()[:MAX_RESUME_CHARS]
     else:
         candidate_context = "No resume information provided."
 
+    # ----------------------------------------------
+    # 2. Generate initial questions
+    # ----------------------------------------------
+
     prompt = f"""
+    /no_think
+
     You are an interview preparation assistant for PrepSense.
 
-    Generate 8 personalized interview questions using the following:
-    1. Job information
-    2. Company research
-    3. Candidate resume
+    Generate exactly 8 personalized interview questions.
 
-    Requirements:
-    - 5 technical questions and 3 behavioral questions.
-    - Make questions relevant to the job role and required skills.
-    - Connect candidate experience with job requirements where relevant.
-    - Do not invent unsupported company facts or achievements.
-    - Avoid duplicate questions.
-    - Do not provide answers.
+    REQUIRED DISTRIBUTION:
+    - Exactly 5 technical questions.
+    - Exactly 3 behavioral questions.
 
-    Return a JSON object with this exact structure:
+    PERSONALIZATION RULES:
+
+- Use the job information, company research and resume.
+- Connect demonstrated candidate experience with job requirements.
+
+RESUME-GROUNDING RULES:
+
+1. Treat the resume as the only source of information
+   about the candidate's past experience and achievements.
+
+2. Only ask "How have you..." or "Describe your experience..."
+   when the resume explicitly establishes that experience.
+
+3. If a technology appears in the resume's project or
+   experience section, you may ask about its actual use.
+
+4. If a technology appears only in the resume's skills
+   section, ask about familiarity or knowledge rather
+   than assuming project experience.
+
+5. If a technology appears only in the job description
+   and not in the resume, use hypothetical questions
+   such as "How would you..." or "How would you approach...".
+
+6. Never invent candidate projects, responsibilities,
+   achievements, tools used or professional experience.
+
+7. Do not infer that the candidate used a technology
+   simply because it is required by the job description.
+
+OTHER RULES:
+
+- Generate distinct technical and behavioral questions.
+- Avoid duplicate or repetitive questions.
+- Every question must have a meaningful relevance reason.
+- Do not provide answers.
+
+    Return ONLY valid JSON in this structure:
+
     {{
         "questions": [
             {{
-                "question": "The interview question",
+                "question": "Question text",
                 "type": "technical",
                 "reason": "Why this question is relevant"
             }}
@@ -185,43 +342,194 @@ def generate_questions(
     {json.dumps(job_info, indent=2)}
 
     Company research:
-    {company_research}
+    {company_research[:3000]}
 
     Candidate resume:
     {candidate_context}
     """
 
-    print("Asking Qwen to generate questions...")
+    print("\nAsking Qwen to generate initial questions...")
+
     response = ask_ai(prompt)
 
     questions = robust_parse_questions(response)
 
-    # Fallback to repair only if absolutely 0 questions were parsed
-    if not questions:
-        print("Initial response did not yield questions. Attempting repair...")
+    # ----------------------------------------------
+    # 3. Remove duplicates and excess questions
+    # ----------------------------------------------
+
+    questions = deduplicate_questions(questions)
+
+    expected = {
+        "technical": 5,
+        "behavioral": 3,
+    }
+
+    # Keep no more than the required number per category.
+    # Any missing slots will be filled using targeted repair.
+    selected_questions = []
+    counts = {
+        "technical": 0,
+        "behavioral": 0,
+    }
+
+    for question in questions:
+
+        question_type = question["type"]
+
+        if counts[question_type] < expected[question_type]:
+            selected_questions.append(question)
+            counts[question_type] += 1
+
+    questions = selected_questions
+
+    # ----------------------------------------------
+    # 4. Identify missing questions
+    # ----------------------------------------------
+
+    missing = {
+        question_type: expected[question_type] - counts[question_type]
+        for question_type in expected
+    }
+
+    total_missing = sum(missing.values())
+
+    print("\n[Validation] Initial question distribution:")
+    print(f"Technical: {counts['technical']}/5")
+    print(f"Behavioral: {counts['behavioral']}/3")
+
+    # ----------------------------------------------
+    # 5. Generate only missing questions
+    # ----------------------------------------------
+
+    if total_missing > 0:
+
+        print(
+            f"\n[Repair] {total_missing} question(s) missing. "
+            "Generating only missing questions..."
+        )
+
+        existing_questions = [
+            question["question"] for question in questions
+        ]
+
         repair_prompt = f"""
-        Format the following into 8 interview questions as a JSON object:
+        /no_think
+
+        You are repairing an incomplete interview question set.
+
+        Generate ONLY the missing interview questions.
+
+        REQUIRED MISSING QUESTIONS:
+        - Technical: {missing['technical']}
+        - Behavioral: {missing['behavioral']}
+        - Total: {total_missing}
+
+        Existing questions (DO NOT REPEAT THESE):
+        {json.dumps(existing_questions, indent=2)}
+
+        Job information:
+        {json.dumps(job_info, indent=2)}
+
+        Company research:
+        {company_research[:2000]}
+
+        Candidate resume:
+        {candidate_context}
+
+        RULES:
+
+        - Generate exactly the requested missing question counts.
+        - Use the correct type for every question.
+        - Do not repeat existing questions.
+        - Use the candidate resume as the source of truth
+          for past experience and achievements.
+        - If a technology appears in a resume project or
+          work experience, you may ask about its actual use.
+        - If a technology appears only in the resume skills
+          section, ask about familiarity or knowledge.
+        - If a technology appears only in the job description,
+          ask hypothetical questions using "How would you..."
+          rather than assuming previous experience.
+        - Never invent candidate projects, responsibilities
+          or achievements.
+        - Give every question a meaningful relevance reason.
+        - Do not provide answers.
+
+        Return ONLY valid JSON:
+
         {{
             "questions": [
-                {{"question": "Question text", "type": "technical", "reason": "Reason"}}
+                {{
+                    "question": "Question text",
+                    "type": "technical",
+                    "reason": "Why this question is relevant"
+                }}
             ]
         }}
-
-        Content:
-        {response[:1500]}
         """
+
         repaired_response = ask_ai(repair_prompt)
-        questions = robust_parse_questions(repaired_response)
 
-    if not questions:
-        raise ValueError("Unable to generate interview questions. Please try again.")
+        repaired_questions = robust_parse_questions(
+            repaired_response
+        )
 
-    # Ensure technical/behavioral normalization
-    for q in questions:
-        if q["type"] not in ("technical", "behavioral"):
-            q["type"] = "technical"
+        repaired_questions = deduplicate_questions(
+            repaired_questions
+        )
 
-    return questions[:8]
+        # Append only the missing categories.
+        seen = {
+            re.sub(
+                r"\s+",
+                " ",
+                question["question"].strip().lower()
+            )
+            for question in questions
+        }
+
+        for question in repaired_questions:
+
+            question_type = question["type"]
+
+            if counts[question_type] >= expected[question_type]:
+                continue
+
+            question_key = re.sub(
+                r"\s+",
+                " ",
+                question["question"].strip().lower()
+            )
+
+            if question_key in seen:
+                continue
+
+            questions.append(question)
+            seen.add(question_key)
+            counts[question_type] += 1
+
+            print(
+                f"[Repair] Added one {question_type} question."
+            )
+
+    # ----------------------------------------------
+    # 6. Final strict validation
+    # ----------------------------------------------
+
+    if counts != expected:
+        raise ValueError(
+            "Question generation could not satisfy the required "
+            "distribution after repair. "
+            f"Received {counts['technical']} technical and "
+            f"{counts['behavioral']} behavioral questions."
+        )
+
+    questions = validate_question_set(questions)
+
+    print("\n[Generator] Interview question generation successful.")
+
+    return questions
 
 
 if __name__ == "__main__":
