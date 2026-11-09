@@ -1,0 +1,89 @@
+{
+  "version": "3.0",
+  "description": "PrepSense Calibration Dataset for Answer Evaluation Agent (Member 4)",
+  "technical_calibration": {
+    "question": "How would you optimize a slow PostgreSQL query?",
+    "role_context": "Role: Backend Developer. Key skills: PostgreSQL, Python, FastAPI.",
+    "cases": [
+      {
+        "tier": "weak",
+        "expected_score_range": [1, 3],
+        "candidate_answer": "I would just restart the database server or buy a larger server with more RAM so queries run faster.",
+        "expected_rubric": {
+          "technical_accuracy": 2,
+          "problem_solving_depth": 1,
+          "relevance": 3,
+          "clarity_and_structure": 3
+        },
+        "reasoning": "Fails to diagnose root cause; restarting or vertical scaling does not optimize query logic."
+      },
+      {
+        "tier": "average",
+        "expected_score_range": [5, 7],
+        "candidate_answer": "I would look at the slow query and check if there are indexes. If an index is missing on the WHERE clause, I will add an index.",
+        "expected_rubric": {
+          "technical_accuracy": 6,
+          "problem_solving_depth": 5,
+          "relevance": 7,
+          "clarity_and_structure": 6
+        },
+        "reasoning": "Correct basic concept (indexing) but lacks execution tooling (EXPLAIN ANALYZE), join analysis, or trade-offs."
+      },
+      {
+        "tier": "strong",
+        "expected_score_range": [8, 10],
+        "candidate_answer": "First, I inspect the execution plan using EXPLAIN (ANALYZE, BUFFERS) to find sequential scans, high-cost nested loops, and memory spills. Next, I evaluate whether a B-Tree, composite, or partial index covers the filtered and joined columns. Finally, I check table statistics with ANALYZE and verify query time and buffer hit ratio improvements.",
+        "expected_rubric": {
+          "technical_accuracy": 9,
+          "problem_solving_depth": 9,
+          "relevance": 9,
+          "clarity_and_structure": 9
+        },
+        "reasoning": "Production-grade diagnostic flow, exact tooling, buffer analysis, composite/partial indexing, and post-change verification."
+      }
+    ]
+  },
+  "behavioral_calibration": {
+    "question": "Tell me about a time you faced a critical production bug right before a release.",
+    "role_context": "Role: Full Stack Engineer.",
+    "cases": [
+      {
+        "tier": "weak",
+        "expected_score_range": [1, 3],
+        "candidate_answer": "A bug happened once and everyone was panicking, but our senior dev fixed it so the release wasn't delayed much.",
+        "expected_rubric": {
+          "situation_task": 3,
+          "action": 1,
+          "result_impact": 2,
+          "communication_relevance": 3
+        },
+        "reasoning": "Passive voice, zero personal action or ownership, vague impact."
+      },
+      {
+        "tier": "average",
+        "expected_score_range": [5, 7],
+        "candidate_answer": "Two hours before release, a payment checkout bug appeared. I investigated the logs, found a null pointer exception in the payment payload, patched the validation logic, and deployed the hotfix in time.",
+        "expected_rubric": {
+          "situation_task": 7,
+          "action": 7,
+          "result_impact": 6,
+          "communication_relevance": 7
+        },
+        "reasoning": "Clear situation and personal action, but lacks quantitative impact, team coordination, or preventive post-mortem measures."
+      },
+      {
+        "tier": "strong",
+        "expected_score_range": [8, 10],
+        "candidate_answer": "During final staging for a major release, our checkout service started returning 500 errors for European currencies. As the on-call engineer, I isolated the issue to a missing currency enum in our recent database migration. I quickly coordinated with the release manager to halt rollout, wrote a hotfix migration with backward compatibility, and added automated test coverage for all ISO currencies. The fix was deployed within 35 minutes with zero customer impact, and I published a post-mortem adding pre-commit migration schema checks to prevent recurrence.",
+        "expected_rubric": {
+          "situation_task": 9,
+          "action": 9,
+          "result_impact": 9,
+          "communication_relevance": 9
+        },
+        "reasoning": "Comprehensive STAR structure: clear stakes, proactive cross-functional action, quantified resolution time, zero customer impact, and lasting prevention."
+      }
+    ]
+  }
+}
+

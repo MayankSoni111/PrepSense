@@ -789,13 +789,15 @@ if result is not None:
             if is_evaluated:
                 fb = st.session_state.evaluations[index]
                 score = fb.get("score", 7)
+                perf_level = fb.get("performance_level", "")
 
                 score_color = "#10B981" if score >= 8 else ("#F59E0B" if score >= 6 else "#EF4444")
+                perf_tag = f" &nbsp;•&nbsp; <span style='font-size: 16px; font-weight: 600; color: #4B5563;'>{perf_level}</span>" if perf_level else ""
 
                 st.markdown(f"""
                 <div style="background: rgba(31, 42, 68, 0.04); border-left: 5px solid {score_color}; border-radius: 8px; padding: 14px 20px; margin: 18px 0;">
                     <div style="font-size: 12px; font-weight: 700; color: #55607A; text-transform: uppercase; letter-spacing: 1px;">Interview Coach Assessment</div>
-                    <div style="font-size: 28px; font-weight: 900; color: {score_color}; margin-top: 4px;">Score: {score} / 10</div>
+                    <div style="font-size: 28px; font-weight: 900; color: {score_color}; margin-top: 4px;">Score: {score} / 10{perf_tag}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -819,6 +821,25 @@ if result is not None:
                 if star and star.lower() != "not applicable":
                     st.markdown("##### ⭐ STAR Analysis")
                     st.info(star)
+
+                # Rubric breakdown & cited evidence (Version 3 Rubric)
+                breakdown = fb.get("breakdown", {})
+                evidence = fb.get("evidence", [])
+                if breakdown or evidence:
+                    with st.expander("📊 Detailed Rubric Breakdown & Evidence", expanded=False):
+                        if breakdown:
+                            st.markdown("###### Criterion Scores (Calculated in Python)")
+                            cols = st.columns(len(breakdown))
+                            for col, (crit, c_score) in zip(cols, breakdown.items()):
+                                label = crit.replace("_", " ").title()
+                                col.metric(label, f"{c_score}/10")
+                        if evidence:
+                            st.markdown("###### Cited Evidence from Your Answer")
+                            for ev in evidence:
+                                c_name = ev.get("criterion", "").replace("_", " ").title()
+                                quote = ev.get("evidence", "")
+                                if quote:
+                                    st.markdown(f"- **{c_name}**: *\"{quote}\"*")
 
     # Additional preparation information
     st.divider()

@@ -2,7 +2,11 @@ import json
 import time
 
 from answer_evaluator import evaluate_answer
-from agents.graph import interview_graph
+
+try:
+    from agents.graph import interview_graph
+except ImportError:
+    interview_graph = None
 
 
 def prepare_interview(
